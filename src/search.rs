@@ -1,15 +1,44 @@
-use termion::color;
-use termion::terminal_size;
-use termion::raw::IntoRawMode;
-use std::io::{Read, Write, stdout, stdin};
+use termion::raw::RawTerminal;
+use std::io::{StdoutLock, Write};
+use std::sync::mpsc::Receiver;
 
 #[derive(Debug)]
-struct Dependency {
-    artifact_id: &'static str,
-    group_id: &'static str,
-    version: &'static str 
+pub struct Dependency {
+    pub artifact_id: &'static str,
+    pub group_id: &'static str,
+    pub version: &'static str 
 }
 
+#[derive(Debug)]
+pub enum SearchCommand {
+    CharacterInputed { character: u8 } ,
+    DependenciesUpdated { dependencies: Vec<Dependency> }
+}
+
+pub struct SearchEngine {
+    render_listener: Receiver<SearchCommand>,
+    stdout: RawTerminal<StdoutLock<'static>>
+}
+
+impl SearchEngine {
+    pub fn new(render_listener: Receiver<SearchCommand>, stdout: RawTerminal<StdoutLock<'static>>) -> SearchEngine {
+        SearchEngine {
+            render_listener,
+            stdout
+        }
+    }
+
+    pub fn listen(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        for message in &self.render_listener {
+            write!(self.stdout, "{:?}", message)?;
+            self.stdout.flush()?;
+        }
+        Ok(())
+    }
+}
+
+
+/*
 const DEPENDENCIES: [Dependency; 2] = [
     Dependency {
         artifact_id: "junit",
@@ -22,10 +51,7 @@ const DEPENDENCIES: [Dependency; 2] = [
         version: "1.3"
     }
 ];
-
 pub fn render()  -> Result<(), Box<dyn std::error::Error>> {
-    let stdout = stdout();
-    let mut stdout = stdout.lock().into_raw_mode().unwrap();
     let stdin = stdin();
     let stdin = stdin.lock();
     let mut bytes = stdin.bytes();
@@ -49,4 +75,4 @@ pub fn render()  -> Result<(), Box<dyn std::error::Error>> {
             _ => {}
         }
     }
-}
+}*/
