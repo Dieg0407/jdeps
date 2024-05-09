@@ -4,24 +4,24 @@ use std::sync::mpsc::Receiver;
 
 #[derive(Debug)]
 pub struct Dependency {
-    pub artifact_id: &'static str,
-    pub group_id: &'static str,
-    pub version: &'static str 
+    pub artifact_id: String,
+    pub group_id: String,
+    pub version: String
 }
 
 impl Clone for Dependency {
     fn clone(&self) -> Self {
         Dependency {
-            artifact_id: self.artifact_id,
-            group_id: self.group_id,
-            version: self.version
+            artifact_id: self.artifact_id.clone(),
+            group_id: self.group_id.clone(),
+            version: self.version.clone()
         }
     }
 
     fn clone_from(&mut self, source: &Self) {
-        self.artifact_id = source.artifact_id;
-        self.group_id = source.group_id;
-        self.version = source.version;
+        self.artifact_id = source.artifact_id.clone();
+        self.group_id = source.group_id.clone();
+        self.version = source.version.clone();
     }
 }
 #[derive(Debug)]
@@ -73,42 +73,3 @@ impl SearchEngine {
     }
 }
 
-
-/*
-const DEPENDENCIES: [Dependency; 2] = [
-    Dependency {
-        artifact_id: "junit",
-        group_id: "junit",
-        version: "4.12"
-    },
-    Dependency {
-        artifact_id: "hamcrest-core",
-        group_id: "org.hamcrest",
-        version: "1.3"
-    }
-];
-pub fn render()  -> Result<(), Box<dyn std::error::Error>> {
-    let stdin = stdin();
-    let stdin = stdin.lock();
-    let mut bytes = stdin.bytes();
-
-    loop {
-        write!(stdout, "{}", termion::clear::All)?;
-        write!(stdout, "{}", termion::cursor::Goto(1, 1))?;
-        write!(stdout, "{}Dependencies", termion::style::Bold)?;
-        write!(stdout, "{}", termion::style::Reset)?;
-        write!(stdout, "\n\r")?;
-        for (i, dep) in DEPENDENCIES.iter().enumerate() {
-            write!(stdout, "{}. {}:{}:{}", i + 1, dep.group_id, dep.artifact_id, dep.version).unwrap();
-            write!(stdout, "\n\r")?;
-        }
-        write!(stdout, "{}", termion::cursor::Goto(1, 10))?;
-        write!(stdout, "Press 'q' to quit")?;
-        stdout.flush().unwrap();
-        let b = bytes.next().unwrap().unwrap();
-        match b {
-            b'q' => return Ok(()),
-            _ => {}
-        }
-    }
-}*/
