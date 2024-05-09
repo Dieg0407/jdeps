@@ -22,6 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let key = key.unwrap();
             match key {
                 termion::event::Key::Char('a') => {
+                    producer.send(CharacterInputed { character: 'a' as u8 }).unwrap();
                     dependencies.push(Dependency { artifact_id: "new".to_string(), group_id: "new".to_string(), version: "new".to_string() });
                     producer.send(DependenciesUpdated { dependencies: dependencies.clone() }).unwrap();
                 },

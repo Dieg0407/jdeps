@@ -32,25 +32,31 @@ pub enum SearchCommand {
 
 pub struct SearchEngine {
     dependenices: Vec<Dependency>,
-    stdout: RawTerminal<StdoutLock<'static>>
+    stdout: RawTerminal<StdoutLock<'static>>,
+    input_buffer: Vec<u8>
 }
 
 impl SearchEngine {
     pub fn new(stdout: RawTerminal<StdoutLock<'static>>) -> SearchEngine {
         SearchEngine {
             stdout,
-            dependenices: vec![]
+            dependenices: vec![],
+            input_buffer: vec![],
         }
     }
 
-    pub fn listen(&mut self, render_listener: Receiver<SearchCommand>) -> Result<(), Box<dyn std::error::Error>> {
-        for message in &render_listener {
+    pub fn listen(&mut self, event_listener: Receiver<SearchCommand>) -> Result<(), Box<dyn std::error::Error>> {
+        self.render()?;
+        for message in &event_listener {
             match message {
                 SearchCommand::DependenciesUpdated { dependencies } => {
                     self.dependenices = dependencies;
                     self.render()?;
                 },
-                _ => {}
+                SearchCommand::CharacterInputed { character } => {
+                    self.input_buffer.push(character);
+                    self.render()?;
+                }
             }
                     
         }
@@ -58,16 +64,21 @@ impl SearchEngine {
     }
 
     fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // get terminal size
+        let (_, height) = termion::terminal_size()?;
         write!(self.stdout, "{}", termion::clear::All)?;
         write!(self.stdout, "{}", termion::cursor::Goto(1, 1))?;
         write!(self.stdout, "{}Dependencies", termion::style::Bold)?;
         write!(self.stdout, "{}", termion::style::Reset)?;
         write!(self.stdout, "\n\r")?;
         for (i, dep) in self.dependenices.iter().enumerate() {
-            write!(self.stdout, "{}. {}:{}:{}", i + 1, dep.group_id, dep.artifact_id, dep.version).unwrap();
+            write!(self.stdout, "{} {}. {}:{}:{}",'\u{2192}', i + 1, dep.group_id, dep.artifact_id, dep.version).unwrap();
             write!(self.stdout, "\n\r")?;
         }
-        write!(self.stdout, "{}", termion::cursor::Goto(1, 10))?;
+
+        // print the cursor
+        let input_buffer = String::from_utf8(self.input_buffer.clone()).unwrap();
+        write!(self.stdout, "{}{}", termion::cursor::Goto(1, height), input_buffer)?;
         self.stdout.flush().unwrap();
         Ok(())
     }
