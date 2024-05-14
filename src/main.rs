@@ -4,6 +4,7 @@ use jdeps::search::Dependency;
 use jdeps::search::SearchEngine;
 use jdeps::search::SearchCommand::CharacterInputed;
 use jdeps::search::SearchCommand::DependenciesUpdated;
+use jdeps::search::SearchCommand::Exit;
 use termion::{input::TermRead, raw::IntoRawMode};
 use std::io::{stdout, stdin};
 
@@ -30,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     producer.send(CharacterInputed { character: c as u8 }).unwrap();
                 },
                 termion::event::Key::Ctrl('c') => {
+                    producer.send(Exit).unwrap();
                     break;
                 }
                 _ => {}

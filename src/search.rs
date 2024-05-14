@@ -1,4 +1,5 @@
 use termion::raw::RawTerminal;
+use termion::style;
 use std::io::{StdoutLock, Write};
 use std::sync::mpsc::Receiver;
 
@@ -26,6 +27,7 @@ impl Clone for Dependency {
 }
 #[derive(Debug)]
 pub enum SearchCommand {
+    Exit,
     CharacterInputed { character: u8 } ,
     DependenciesUpdated { dependencies: Vec<Dependency> }
 }
@@ -57,10 +59,19 @@ impl SearchEngine {
                     self.input_buffer.push(character);
                     self.render()?;
                 }
+                SearchCommand::Exit => {
+                    self.clear();
+                    break;
+                }
             }
                     
         }
         Ok(())
+    }
+
+    pub fn clear(&mut self) {
+        let _ = write!(self.stdout, "{}", termion::clear::All);
+        let _ = write!(self.stdout, "{}", termion::cursor::Goto(1, 1));
     }
 
     fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -81,8 +92,9 @@ impl SearchEngine {
         (0..width).for_each(|_| write!(self.stdout, "{}", '\u{2500}').unwrap());
         
         // print the current buffer
-        let input_buffer = String::from_utf8(self.input_buffer.clone()).unwrap();
-        write!(self.stdout, "> {}{}", termion::cursor::Goto(3, height), input_buffer)?;
+        let input_buffer = String::from_utf8(self.input_buffer.clone())?;
+        write!(self.stdout, "{}>{}", style::Bold, style::Reset)?;
+        write!(self.stdout, "{}{}", termion::cursor::Goto(3, height), input_buffer)?;
         self.stdout.flush().unwrap();
         Ok(())
     }
