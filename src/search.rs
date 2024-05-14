@@ -65,7 +65,7 @@ impl SearchEngine {
 
     fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // get terminal size
-        let (_, height) = termion::terminal_size()?;
+        let (width, height) = termion::terminal_size()?;
         write!(self.stdout, "{}", termion::clear::All)?;
         write!(self.stdout, "{}", termion::cursor::Goto(1, 1))?;
         write!(self.stdout, "{}Dependencies", termion::style::Bold)?;
@@ -76,9 +76,13 @@ impl SearchEngine {
             write!(self.stdout, "\n\r")?;
         }
 
-        // print the cursor
+        // print separator
+        write!(self.stdout, "{}", termion::cursor::Goto(1, height - 1))?;
+        (0..width).for_each(|_| write!(self.stdout, "{}", '\u{2500}').unwrap());
+        
+        // print the current buffer
         let input_buffer = String::from_utf8(self.input_buffer.clone()).unwrap();
-        write!(self.stdout, "{}{}", termion::cursor::Goto(1, height), input_buffer)?;
+        write!(self.stdout, "> {}{}", termion::cursor::Goto(3, height), input_buffer)?;
         self.stdout.flush().unwrap();
         Ok(())
     }
