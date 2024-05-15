@@ -3,6 +3,8 @@ use termion::style;
 use std::io::{StdoutLock, Write};
 use std::sync::mpsc::Receiver;
 
+const ARROW: char = '\u{2192}';
+
 #[derive(Debug)]
 pub struct Dependency {
     pub artifact_id: String,
@@ -25,9 +27,13 @@ impl Clone for Dependency {
         self.version = source.version.clone();
     }
 }
+
 #[derive(Debug)]
 pub enum SearchCommand {
     Exit,
+    Up,
+    Down,
+    Backspace,
     CharacterInputed { character: u8 } ,
     DependenciesUpdated { dependencies: Vec<Dependency> }
 }
@@ -35,15 +41,23 @@ pub enum SearchCommand {
 pub struct SearchEngine {
     dependenices: Vec<Dependency>,
     stdout: RawTerminal<StdoutLock<'static>>,
-    input_buffer: Vec<u8>
+    input_buffer: Vec<u8>,
+
+    // controls
+    selected_dependency_index: i32
 }
 
 impl SearchEngine {
     pub fn new(stdout: RawTerminal<StdoutLock<'static>>) -> SearchEngine {
+        let mut deps = vec![];
+        (0..200).for_each(|i| {
+            deps.push(Dependency { artifact_id: format!("artifact-{}", i), group_id: format!("group-{}", i), version: format!("version-{}", i) });
+        });
         SearchEngine {
+            dependenices: deps,
             stdout,
-            dependenices: vec![],
             input_buffer: vec![],
+            selected_dependency_index: 0
         }
     }
 
@@ -54,7 +68,7 @@ impl SearchEngine {
                 SearchCommand::DependenciesUpdated { dependencies } => {
                     self.dependenices = dependencies;
                     self.render()?;
-                },
+                }
                 SearchCommand::CharacterInputed { character } => {
                     self.input_buffer.push(character);
                     self.render()?;
@@ -62,6 +76,22 @@ impl SearchEngine {
                 SearchCommand::Exit => {
                     self.clear();
                     break;
+                }
+                SearchCommand::Backspace => {
+                    self.input_buffer.pop();
+                    self.render()?;
+                }
+                SearchCommand::Down => {
+                    if self.selected_dependency_index > 0 {
+                        self.selected_dependency_index -= 1;
+                        self.render()?;
+                    }
+                }
+                SearchCommand::Up => {
+                    if self.selected_dependency_index < self.dependenices.len() as i32 {
+                        self.selected_dependency_index += 1;
+                        self.render()?;
+                    }
                 }
             }
                     
@@ -75,6 +105,17 @@ impl SearchEngine {
     }
 
     fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // setup selector
+        if !self.dependenices.is_empty() && self.selected_dependency_index == -1 {
+            self.selected_dependency_index = 0;
+        }
+        else if self.dependenices.is_empty() {
+            self.selected_dependency_index = -1;
+        }
+        else if self.selected_dependency_index > self.dependenices.len() as i32 - 1 {
+            self.selected_dependency_index = self.dependenices.len() as i32 - 1;
+        }
+
         // get terminal size
         let (width, height) = termion::terminal_size()?;
         write!(self.stdout, "{}", termion::clear::All)?;
@@ -82,9 +123,16 @@ impl SearchEngine {
         write!(self.stdout, "{}Dependencies", termion::style::Bold)?;
         write!(self.stdout, "{}", termion::style::Reset)?;
         write!(self.stdout, "\n\r")?;
+
+        let start = height - 2;
         for (i, dep) in self.dependenices.iter().enumerate() {
-            write!(self.stdout, "{} {}. {}:{}:{}",'\u{2192}', i + 1, dep.group_id, dep.artifact_id, dep.version).unwrap();
-            write!(self.stdout, "\n\r")?;
+            if start - i as u16 == 0 {
+                break;
+            }
+            let selector = if i as i32 == self.selected_dependency_index { ARROW } else { ' ' };
+            write!(self.stdout, "{}", termion::cursor::Goto(1, start - i as u16))?;
+            write!(self.stdout, "{} {}|{}:{}:{}", selector, i, dep.group_id, dep.artifact_id, dep.version).unwrap();
+            write!(self.stdout, "\r")?;
         }
 
         // print separator

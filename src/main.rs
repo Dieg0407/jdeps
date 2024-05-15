@@ -2,9 +2,12 @@ use std::thread;
 
 use jdeps::search::Dependency;
 use jdeps::search::SearchEngine;
+use jdeps::search::SearchCommand::Backspace;
 use jdeps::search::SearchCommand::CharacterInputed;
 use jdeps::search::SearchCommand::DependenciesUpdated;
 use jdeps::search::SearchCommand::Exit;
+use jdeps::search::SearchCommand::Up;
+use jdeps::search::SearchCommand::Down;
 use termion::{input::TermRead, raw::IntoRawMode};
 use std::io::{stdout, stdin};
 
@@ -26,14 +29,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     producer.send(CharacterInputed { character: 'a' as u8 }).unwrap();
                     dependencies.push(Dependency { artifact_id: "new".to_string(), group_id: "new".to_string(), version: "new".to_string() });
                     producer.send(DependenciesUpdated { dependencies: dependencies.clone() }).unwrap();
-                },
-                termion::event::Key::Char(c) => {
-                    producer.send(CharacterInputed { character: c as u8 }).unwrap();
-                },
+                }
+                termion::event::Key::Char('d') => {
+                    producer.send(CharacterInputed { character: 'd' as u8 }).unwrap();
+                    producer.send(DependenciesUpdated { dependencies: vec![] }).unwrap();
+                }
                 termion::event::Key::Ctrl('c') => {
                     producer.send(Exit).unwrap();
                     break;
                 }
+                termion::event::Key::Char(c) => producer.send(CharacterInputed { character: c as u8 }).unwrap(),
+                termion::event::Key::Backspace => producer.send(Backspace).unwrap(),
+                termion::event::Key::Up => producer.send(Up).unwrap(),
+                termion::event::Key::Down => producer.send(Down).unwrap(),
                 _ => {}
             }
         }
