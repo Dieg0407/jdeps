@@ -57,7 +57,7 @@ impl SearchEngine {
             dependenices: deps,
             stdout,
             input_buffer: vec![],
-            selected_dependency_index: 0
+            selected_dependency_index: 0,
         }
     }
 
@@ -120,19 +120,26 @@ impl SearchEngine {
         let (width, height) = termion::terminal_size()?;
         write!(self.stdout, "{}", termion::clear::All)?;
         write!(self.stdout, "{}", termion::cursor::Goto(1, 1))?;
-        write!(self.stdout, "{}Dependencies", termion::style::Bold)?;
         write!(self.stdout, "{}", termion::style::Reset)?;
         write!(self.stdout, "\n\r")?;
 
-        let start = height - 2;
-        for (i, dep) in self.dependenices.iter().enumerate() {
-            if start - i as u16 == 0 {
+        let max_visible_rows = height - 2;
+        let mut counter = 0;
+        let mut skipped_rows = 0;
+
+        if (max_visible_rows as i32) - 1 <= self.selected_dependency_index {
+            skipped_rows = self.selected_dependency_index as usize + 1 - max_visible_rows as usize;
+        }
+
+        for (i, dep) in self.dependenices.iter().enumerate().skip(skipped_rows) {
+            if max_visible_rows - counter as u16 == 0 {
                 break;
             }
             let selector = if i as i32 == self.selected_dependency_index { ARROW } else { ' ' };
-            write!(self.stdout, "{}", termion::cursor::Goto(1, start - i as u16))?;
+            write!(self.stdout, "{}", termion::cursor::Goto(1, max_visible_rows - counter as u16))?;
             write!(self.stdout, "{} {}|{}:{}:{}", selector, i, dep.group_id, dep.artifact_id, dep.version).unwrap();
             write!(self.stdout, "\r")?;
+            counter += 1;
         }
 
         // print separator
