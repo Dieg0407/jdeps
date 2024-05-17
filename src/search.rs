@@ -44,7 +44,8 @@ pub struct SearchEngine {
     input_buffer: Vec<u8>,
 
     // controls
-    selected_dependency_index: i32
+    selected_dependency_index: i32,
+    skipped_rows: usize
 }
 
 impl SearchEngine {
@@ -58,6 +59,7 @@ impl SearchEngine {
             stdout,
             input_buffer: vec![],
             selected_dependency_index: 0,
+            skipped_rows: 0
         }
     }
 
@@ -105,33 +107,36 @@ impl SearchEngine {
     }
 
     fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // setup selector
-        if !self.dependenices.is_empty() && self.selected_dependency_index == -1 {
-            self.selected_dependency_index = 0;
-        }
-        else if self.dependenices.is_empty() {
-            self.selected_dependency_index = -1;
-        }
-        else if self.selected_dependency_index > self.dependenices.len() as i32 - 1 {
-            self.selected_dependency_index = self.dependenices.len() as i32 - 1;
-        }
+        self.clear();
 
         // get terminal size
         let (width, height) = termion::terminal_size()?;
-        write!(self.stdout, "{}", termion::clear::All)?;
-        write!(self.stdout, "{}", termion::cursor::Goto(1, 1))?;
-        write!(self.stdout, "{}", termion::style::Reset)?;
-        write!(self.stdout, "\n\r")?;
-
         let max_visible_rows = height - 2;
-        let mut counter = 0;
-        let mut skipped_rows = 0;
 
-        if (max_visible_rows as i32) - 1 <= self.selected_dependency_index {
-            skipped_rows = self.selected_dependency_index as usize + 1 - max_visible_rows as usize;
+        // setup selector
+        if !self.dependenices.is_empty() && self.selected_dependency_index == -1 {
+            self.selected_dependency_index = 0;
+            self.skipped_rows = 0;
+        }
+        else if self.dependenices.is_empty() {
+            self.selected_dependency_index = -1;
+            self.skipped_rows = 0;
+        }
+        else if self.selected_dependency_index > self.dependenices.len() as i32 - 1 {
+            self.selected_dependency_index = self.dependenices.len() as i32 - 1;
+            let possible_skipped_rows = self.dependenices.len() as i32 - max_visible_rows as i32;
+            self.skipped_rows = if possible_skipped_rows > 0 { possible_skipped_rows as usize } else { 0 };
+        }
+        
+        if max_visible_rows as i32 + self.skipped_rows as i32 == self.selected_dependency_index {
+            self.skipped_rows += 1;
+        }
+        else if self.selected_dependency_index == self.skipped_rows as i32 - 1 && self.skipped_rows > 0 {
+            self.skipped_rows -= 1;
         }
 
-        for (i, dep) in self.dependenices.iter().enumerate().skip(skipped_rows) {
+        let mut counter = 0;
+        for (i, dep) in self.dependenices.iter().enumerate().skip(self.skipped_rows) {
             if max_visible_rows - counter as u16 == 0 {
                 break;
             }
@@ -149,7 +154,7 @@ impl SearchEngine {
         // print the current buffer
         let input_buffer = String::from_utf8(self.input_buffer.clone())?;
         write!(self.stdout, "{}>{}", style::Bold, style::Reset)?;
-        write!(self.stdout, "{}{}", termion::cursor::Goto(3, height), input_buffer)?;
+        write!(self.stdout, "{}{} | {} {} {}", termion::cursor::Goto(3, height), input_buffer, max_visible_rows, self.selected_dependency_index, self.skipped_rows)?;
         self.stdout.flush().unwrap();
         Ok(())
     }
