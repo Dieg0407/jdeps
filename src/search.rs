@@ -1,152 +1,93 @@
-use termion::raw::RawTerminal;
-use termion::style;
-use std::io::{StdoutLock, Write};
+mod engine;
+
+use engine::SearchEngine;
+use engine::SearchCommand::Up;
+use engine::SearchCommand::Down;
+use engine::SearchCommand::Exit;
+use engine::SearchCommand::UpdatedInput;
+use engine::SearchCommand::DependenciesUpdated;
+
+use std::error::Error;
+use std::io::stdin;
+use std::io::stdout;
 use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
+use termion::raw::IntoRawMode;
+use termion::input::TermRead;
 
-const ARROW: char = '\u{2192}';
+use crate::debouncer::Debouncer;
+use crate::models::Dependency;
 
-#[derive(Debug)]
-pub struct Dependency {
-    pub artifact_id: String,
-    pub group_id: String,
-    pub version: String
+use self::engine::SearchCommand;
+
+pub fn run() -> Result<(), Box<dyn Error>> {
+    let stdout = stdout();
+    let stdout = stdout.lock().into_raw_mode()?;
+
+    let (engine_event_sender, engine_event_receiver) = std::sync::mpsc::channel();
+    let mut search_engine = SearchEngine::new(stdout);
+
+    let (fetch_deps_sender, fetch_deps_receiver) = std::sync::mpsc::channel();
+    let debouncer = Debouncer::new();
+    debouncer.start(fetch_deps_sender);
+
+    let _ = start_fetch_deps_listener(engine_event_sender.clone(), fetch_deps_receiver);
+    let _ = start_input_listener(engine_event_sender, debouncer);
+
+    search_engine.listen(engine_event_receiver)
 }
 
-impl Clone for Dependency {
-    fn clone(&self) -> Self {
-        Dependency {
-            artifact_id: self.artifact_id.clone(),
-            group_id: self.group_id.clone(),
-            version: self.version.clone()
-        }
-    }
-
-    fn clone_from(&mut self, source: &Self) {
-        self.artifact_id = source.artifact_id.clone();
-        self.group_id = source.group_id.clone();
-        self.version = source.version.clone();
-    }
-}
-
-#[derive(Debug)]
-pub enum SearchCommand {
-    Exit,
-    Up,
-    Down,
-    UpdatedInput { value: String } ,
-    DependenciesUpdated { dependencies: Vec<Dependency> }
-}
-
-pub struct SearchEngine {
-    dependenices: Vec<Dependency>,
-    stdout: RawTerminal<StdoutLock<'static>>,
-    input: String,
-
-    // controls
-    selected_dependency_index: i32,
-    skipped_rows: usize
-}
-
-impl SearchEngine {
-    pub fn new(stdout: RawTerminal<StdoutLock<'static>>) -> SearchEngine {
-        SearchEngine {
-            dependenices: vec![],
-            stdout,
-            input: "".to_string(),
-            selected_dependency_index: 0,
-            skipped_rows: 0
-        }
-    }
-
-    pub fn listen(&mut self, event_listener: Receiver<SearchCommand>) -> Result<(), Box<dyn std::error::Error>> {
-        self.render()?;
-        for message in &event_listener {
-            match message {
-                SearchCommand::DependenciesUpdated { dependencies } => {
-                    self.dependenices = dependencies;
-                    self.render()?;
-                }
-                SearchCommand::UpdatedInput { value } => {
-                    self.input = value;
-                    self.render()?;
-                }
-                SearchCommand::Exit => {
-                    self.clear();
+fn start_input_listener(engine_sender: Sender<SearchCommand>, debouncer: Debouncer) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let mut input_buffer = vec![];
+        let stdin =stdin();
+        for key in stdin.keys() {
+            let key = key.unwrap();
+            match key {
+                termion::event::Key::Ctrl('c') => {
+                    let _ = engine_sender.send(Exit);
+                    debouncer.stop();
                     break;
                 }
-                SearchCommand::Down => {
-                    if self.selected_dependency_index > 0 {
-                        self.selected_dependency_index -= 1;
-                        self.render()?;
-                    }
-                }
-                SearchCommand::Up => {
-                    if self.selected_dependency_index < self.dependenices.len() as i32 {
-                        self.selected_dependency_index += 1;
-                        self.render()?;
-                    }
-                }
+                termion::event::Key::Char(c) => { 
+                    input_buffer.push(c as u8);
+                    let input = String::from_utf8(input_buffer.clone()).unwrap();
+
+                    debouncer.debounce(input.clone(), Duration::from_millis(500));
+                    let _ = engine_sender.send(UpdatedInput { value: input });
+                },
+                termion::event::Key::Backspace => {
+                    input_buffer.pop();
+                    let input = String::from_utf8(input_buffer.clone()).unwrap();
+
+                    debouncer.debounce(input.clone(), Duration::from_millis(500));
+                    let _ = engine_sender.send(UpdatedInput { value: input });
+                },
+                termion::event::Key::Up => engine_sender.send(Up).unwrap(),
+                termion::event::Key::Down => engine_sender.send(Down).unwrap(),
+                _ => {}
             }
-                    
         }
-        Ok(())
-    }
-
-    pub fn clear(&mut self) {
-        let _ = write!(self.stdout, "{}", termion::clear::All);
-        let _ = write!(self.stdout, "{}", termion::cursor::Goto(1, 1));
-    }
-
-    fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.clear();
-
-        // get terminal size
-        let (width, height) = termion::terminal_size()?;
-        let max_visible_rows = height - 2;
-
-        // setup selector
-        if !self.dependenices.is_empty() && self.selected_dependency_index == -1 {
-            self.selected_dependency_index = 0;
-            self.skipped_rows = 0;
-        }
-        else if self.dependenices.is_empty() {
-            self.selected_dependency_index = -1;
-            self.skipped_rows = 0;
-        }
-        else if self.selected_dependency_index > self.dependenices.len() as i32 - 1 {
-            self.selected_dependency_index = self.dependenices.len() as i32 - 1;
-            let possible_skipped_rows = self.dependenices.len() as i32 - max_visible_rows as i32;
-            self.skipped_rows = if possible_skipped_rows > 0 { possible_skipped_rows as usize } else { 0 };
-        }
-        
-        if max_visible_rows as i32 + self.skipped_rows as i32 == self.selected_dependency_index {
-            self.skipped_rows += 1;
-        }
-        else if self.selected_dependency_index == self.skipped_rows as i32 - 1 && self.skipped_rows > 0 {
-            self.skipped_rows -= 1;
-        }
-
-        let mut counter = 0;
-        for (i, dep) in self.dependenices.iter().enumerate().skip(self.skipped_rows) {
-            if max_visible_rows - counter as u16 == 0 {
-                break;
-            }
-            let selector = if i as i32 == self.selected_dependency_index { ARROW } else { ' ' };
-            write!(self.stdout, "{}", termion::cursor::Goto(1, max_visible_rows - counter as u16))?;
-            write!(self.stdout, "{} {}|{}:{}:{}", selector, i, dep.group_id, dep.artifact_id, dep.version).unwrap();
-            write!(self.stdout, "\r")?;
-            counter += 1;
-        }
-
-        // print separator
-        write!(self.stdout, "{}", termion::cursor::Goto(1, height - 1))?;
-        (0..width).for_each(|_| write!(self.stdout, "{}", '\u{2500}').unwrap());
-        
-        // print the current buffer
-        write!(self.stdout, "{}>{}", style::Bold, style::Reset)?;
-        write!(self.stdout, "{}{}", termion::cursor::Goto(3, height), self.input)?;
-        self.stdout.flush().unwrap();
-        Ok(())
-    }
+    })
 }
 
+fn start_fetch_deps_listener(engine_sender: Sender<SearchCommand>, fetch_deps_recevier: Receiver<String>) -> JoinHandle<()> {
+    thread::spawn(move || {
+        for query in fetch_deps_recevier {
+            // hit the api
+            let dependencies = (0..query.len()).map(|i| {
+                Dependency {
+                    artifact_id: format!("artifact-{}", i),
+                    group_id: format!("group-{}", i),
+                    version: format!("version-{}", i)
+                }
+            }).collect();
+
+            // send the response to the search engine
+            let _ = engine_sender.send(DependenciesUpdated { dependencies });
+        }
+    })
+}
