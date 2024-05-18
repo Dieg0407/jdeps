@@ -1,4 +1,11 @@
-use std::{sync::{mpsc::Sender, Arc, Mutex}, thread::{self, JoinHandle}, time::{Duration, Instant}};
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
+use std::time::Instant;
+
 
 pub struct Debouncer {
     data: Arc<Mutex<Option<(String, Instant)>>>,
@@ -24,8 +31,6 @@ impl Debouncer {
             let mut wait = Duration::from_millis(0);
             loop {
                 thread::sleep(wait);
-                println!("wait {:?}", wait);
-
                 let mut data = data.lock().unwrap();
                 let stopper = stopper.lock().unwrap();
                 if *stopper && (*data).is_none() {
