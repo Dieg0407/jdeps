@@ -33,15 +33,14 @@ pub enum SearchCommand {
     Exit,
     Up,
     Down,
-    Backspace,
-    CharacterInputed { character: u8 } ,
+    UpdatedInput { value: String } ,
     DependenciesUpdated { dependencies: Vec<Dependency> }
 }
 
 pub struct SearchEngine {
     dependenices: Vec<Dependency>,
     stdout: RawTerminal<StdoutLock<'static>>,
-    input_buffer: Vec<u8>,
+    input: String,
 
     // controls
     selected_dependency_index: i32,
@@ -50,14 +49,10 @@ pub struct SearchEngine {
 
 impl SearchEngine {
     pub fn new(stdout: RawTerminal<StdoutLock<'static>>) -> SearchEngine {
-        let mut deps = vec![];
-        (0..200).for_each(|i| {
-            deps.push(Dependency { artifact_id: format!("artifact-{}", i), group_id: format!("group-{}", i), version: format!("version-{}", i) });
-        });
         SearchEngine {
-            dependenices: deps,
+            dependenices: vec![],
             stdout,
-            input_buffer: vec![],
+            input: "".to_string(),
             selected_dependency_index: 0,
             skipped_rows: 0
         }
@@ -71,17 +66,13 @@ impl SearchEngine {
                     self.dependenices = dependencies;
                     self.render()?;
                 }
-                SearchCommand::CharacterInputed { character } => {
-                    self.input_buffer.push(character);
+                SearchCommand::UpdatedInput { value } => {
+                    self.input = value;
                     self.render()?;
                 }
                 SearchCommand::Exit => {
                     self.clear();
                     break;
-                }
-                SearchCommand::Backspace => {
-                    self.input_buffer.pop();
-                    self.render()?;
                 }
                 SearchCommand::Down => {
                     if self.selected_dependency_index > 0 {
@@ -152,9 +143,8 @@ impl SearchEngine {
         (0..width).for_each(|_| write!(self.stdout, "{}", '\u{2500}').unwrap());
         
         // print the current buffer
-        let input_buffer = String::from_utf8(self.input_buffer.clone())?;
         write!(self.stdout, "{}>{}", style::Bold, style::Reset)?;
-        write!(self.stdout, "{}{} | {} {} {}", termion::cursor::Goto(3, height), input_buffer, max_visible_rows, self.selected_dependency_index, self.skipped_rows)?;
+        write!(self.stdout, "{}{}", termion::cursor::Goto(3, height), self.input)?;
         self.stdout.flush().unwrap();
         Ok(())
     }

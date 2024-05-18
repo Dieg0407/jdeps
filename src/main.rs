@@ -1,51 +1,78 @@
 use std::thread;
+use std::time::Duration;
 
+use jdeps::debouncer::Debouncer;
 use jdeps::search::Dependency;
 use jdeps::search::SearchEngine;
-use jdeps::search::SearchCommand::Backspace;
-use jdeps::search::SearchCommand::CharacterInputed;
-use jdeps::search::SearchCommand::DependenciesUpdated;
+use jdeps::search::SearchCommand::UpdatedInput;
 use jdeps::search::SearchCommand::Exit;
 use jdeps::search::SearchCommand::Up;
 use jdeps::search::SearchCommand::Down;
+use jdeps::search::SearchCommand::DependenciesUpdated;
 use termion::{input::TermRead, raw::IntoRawMode};
 use std::io::{stdout, stdin};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-
     let stdout = stdout();
     let stdout = stdout.lock().into_raw_mode()?;
 
-    let (producer, consumer) = std::sync::mpsc::channel();
+    let (repo_producer, repo_consumer) = std::sync::mpsc::channel();
+
+    let (render_producer, render_consumer) = std::sync::mpsc::channel();
+    let render_producer_for_repo = render_producer.clone();
     let mut search_engine = SearchEngine::new(stdout);
 
-    thread::spawn(move || {
-        let mut dependencies = vec![];
+    let debouncer = Debouncer::new();
+    debouncer.start(repo_producer);
+
+    let _ = thread::spawn(move || {
+        let mut input_buffer = vec![];
         let stdin = stdin();
         for key in stdin.keys() {
             let key = key.unwrap();
             match key {
-                termion::event::Key::Char('a') => {
-                    producer.send(CharacterInputed { character: 'a' as u8 }).unwrap();
-                    dependencies.push(Dependency { artifact_id: "new".to_string(), group_id: "new".to_string(), version: "new".to_string() });
-                    producer.send(DependenciesUpdated { dependencies: dependencies.clone() }).unwrap();
-                }
-                termion::event::Key::Char('d') => {
-                    producer.send(CharacterInputed { character: 'd' as u8 }).unwrap();
-                    producer.send(DependenciesUpdated { dependencies: vec![] }).unwrap();
-                }
                 termion::event::Key::Ctrl('c') => {
-                    producer.send(Exit).unwrap();
+                    let _ = render_producer.send(Exit);
+                    debouncer.stop();
                     break;
                 }
-                termion::event::Key::Char(c) => producer.send(CharacterInputed { character: c as u8 }).unwrap(),
-                termion::event::Key::Backspace => producer.send(Backspace).unwrap(),
-                termion::event::Key::Up => producer.send(Up).unwrap(),
-                termion::event::Key::Down => producer.send(Down).unwrap(),
+                termion::event::Key::Char(c) => { 
+                    input_buffer.push(c as u8);
+                    let input = String::from_utf8(input_buffer.clone()).unwrap();
+
+                    debouncer.debounce(input.clone(), Duration::from_millis(500));
+                    let _ = render_producer.send(UpdatedInput { value: input });
+                },
+                termion::event::Key::Backspace => {
+                    input_buffer.pop();
+                    let input = String::from_utf8(input_buffer.clone()).unwrap();
+
+                    debouncer.debounce(input.clone(), Duration::from_millis(500));
+                    let _ = render_producer.send(UpdatedInput { value: input });
+                },
+                termion::event::Key::Up => render_producer.send(Up).unwrap(),
+                termion::event::Key::Down => render_producer.send(Down).unwrap(),
                 _ => {}
             }
         }
     });
 
-    search_engine.listen(consumer)
+
+    thread::spawn(move || {
+        for query in repo_consumer {
+            // hit the api
+            let dependencies = (0..query.len()).map(|i| {
+                Dependency {
+                    artifact_id: format!("artifact-{}", i),
+                    group_id: format!("group-{}", i),
+                    version: format!("version-{}", i)
+                }
+            }).collect();
+
+            // send the response to the search engine
+            let _ = render_producer_for_repo.send(DependenciesUpdated { dependencies });
+        }
+    });
+
+    search_engine.listen(render_consumer)
 }
