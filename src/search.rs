@@ -1,4 +1,5 @@
 mod engine;
+mod dependency_repository;
 
 use engine::SearchEngine;
 use engine::SearchCommand::Up;
@@ -21,6 +22,7 @@ use termion::input::TermRead;
 use crate::debouncer::Debouncer;
 use crate::models::Dependency;
 
+use self::dependency_repository::fetch_dependencies;
 use self::engine::SearchCommand;
 
 pub fn run() -> Result<(), Box<dyn Error>> {
@@ -78,13 +80,7 @@ fn start_fetch_deps_listener(engine_sender: Sender<SearchCommand>, fetch_deps_re
     thread::spawn(move || {
         for query in fetch_deps_recevier {
             // hit the api
-            let dependencies = (0..query.len()).map(|i| {
-                Dependency {
-                    artifact_id: format!("artifact-{}", i),
-                    group_id: format!("group-{}", i),
-                    version: format!("version-{}", i)
-                }
-            }).collect();
+            let dependencies = fetch_dependencies(&query).unwrap_or(vec![]);
 
             // send the response to the search engine
             let _ = engine_sender.send(DependenciesUpdated { dependencies });
